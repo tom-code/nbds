@@ -1,10 +1,12 @@
 
-#include "net.h"
+
 #include <string.h>
 #include <vector>
 #include <stdint.h>
 
 #include "buffers.h"
+#include "net.h"
+#include "nbds.h"
 
 
 
@@ -29,6 +31,10 @@ class nbds_t {
 public:
   nbds_t() {
     disk.resize(1024*1024*10);
+  }
+
+  void resize(int size) {
+    disk.resize(size);
   }
 
   void set_connection(connection_t *c) {
@@ -124,7 +130,9 @@ private:
 
 };
 
-void nbds_new_con(connection_t *con) {
+void nbds_new_con(connection_t *con, std::map<nbd_options_t, std::string> opts) {
   nbds_t *n = new nbds_t();
+  auto size_opt = opts.find(nbd_options_t::SIZE);
+  if (size_opt != opts.end()) n->resize(std::stoi(size_opt->second));
   n->set_connection(con);
 }

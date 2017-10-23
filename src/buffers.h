@@ -2,6 +2,8 @@
 #include <stdint.h>
 #include <arpa/inet.h>
 
+//simple decoding and encoding buffers
+
 #ifndef htobe64
   #define htobe64(x) (((uint64_t) htonl((uint32_t) ((x) >> 32))) | (((uint64_t) htonl((uint32_t) x)) << 32))
 #endif

@@ -1,4 +1,5 @@
 #include <functional>
+#include <string>
 
 class connection_t {
 
@@ -9,3 +10,5 @@ public:
   virtual void close() = 0;
   virtual ~connection_t(){};
 };
+
+void server(std::string bind_ip, int port, void(*new_connection_callback)(connection_t *c));

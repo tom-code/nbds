@@ -6,15 +6,16 @@
 
 #include "net.h"
 
+//wrapper for tcp server based on libuv - see net.h for external interface
 
-static void write_comp_cb(uv_write_t *req, int status) {
+static void close_callback(uv_handle_t *handle);
+
+static void write_complete(uv_write_t *req, int status) {
   free(req);
 }
 
-static void close_cb(uv_handle_t *handle);
-
 class connection_uv_t : public connection_t {
-  uv_tcp_t *c;
+  uv_tcp_t *c = nullptr;
   std::function<void(const unsigned char *data, int size)> read_cb;
   std::function<void()> release_cb;
 public:
@@ -36,11 +37,11 @@ public:
 
     //some examples suggests req can be on stack - but this is not true
     uv_write_t *req = (uv_write_t*)malloc(sizeof(uv_write_t));
-    uv_write(req, (uv_stream_t*)c, &buf, 1, write_comp_cb);
+    uv_write(req, (uv_stream_t*)c, &buf, 1, write_complete);
   }
 
   virtual void close() {
-    uv_close((uv_handle_t*)c, close_cb);
+    uv_close((uv_handle_t*)c, close_callback);
   }
 
   void data_in(unsigned char *data, int len) {
@@ -56,33 +57,33 @@ public:
 
 };
 
-static void close_cb(uv_handle_t *handle) {
+static void close_callback(uv_handle_t *handle) {
   connection_uv_t *c = (connection_uv_t*)handle->data;
   c->release(); //user release callbacks
-  delete(c);
+  delete c;
   free(handle);
+}
+
+static void alloc_callback(uv_handle_t *h, size_t size, uv_buf_t *buf) {
+  buf->base = (char*)malloc(size);
+  buf->len = size;
+}
+
+static void receive_callback(uv_stream_t *stream, ssize_t nread, const uv_buf_t *buf) {
+  if (nread < 0) {
+    uv_close((uv_handle_t*)stream, close_callback);
+    if (buf) free(buf->base);
+    return;
+  }
+
+  connection_uv_t *c = (connection_uv_t*)stream->data;
+  c->data_in((unsigned char*)buf->base, nread);
+  free(buf->base);
 }
 
 
 static uv_loop_t *loop;
 
-static void alloc(uv_handle_t *h, size_t size, uv_buf_t *buf) {
-  buf->base = (char*)malloc(size);
-  buf->len = size;
-}
-
-static void rcb(uv_stream_t *stream, ssize_t nread, const uv_buf_t *buf) {
-  connection_uv_t *c = (connection_uv_t*)stream->data;
-  if (nread < 0) {
-    uv_close((uv_handle_t*)stream, close_cb);
-    if (buf) free(buf->base);
-    return;
-  }
-  c->data_in((unsigned char*)buf->base, nread);
-  free(buf->base);
-}
-
-void nbds_new_con(connection_t *con);
 static void concb(uv_stream_t *server, int status) {
   printf("got con\n");
   uv_tcp_t *c = (uv_tcp_t*)malloc(sizeof(uv_tcp_t));
@@ -92,12 +93,15 @@ static void concb(uv_stream_t *server, int status) {
   connection_t *con = new connection_uv_t(c);
   c->data = con;
 
-  uv_read_start((uv_stream_t*)c, alloc, rcb);
-  nbds_new_con(con);
+  uv_read_start((uv_stream_t*)c, alloc_callback, receive_callback);
+
+  void(*callback)(connection_t *c) = (void(*)(connection_t *c))server->data;
+  callback(con);
 }
 
 
-void server(std::string bind_ip, int port) {
+
+void server(std::string bind_ip, int port, void(*callback)(connection_t *c)) {
   uv_tcp_t server;
   loop = uv_default_loop();
 
@@ -106,14 +110,11 @@ void server(std::string bind_ip, int port) {
 
   uv_tcp_init(loop, &server);
   uv_tcp_bind(&server, (sockaddr*)&addr, 0);
-  server.data = nullptr;
+  server.data = (void*)callback;
 
   uv_listen((uv_stream_t*)&server, 10, concb);
 
   uv_run(loop, UV_RUN_DEFAULT);  
 }
 
-int main()
-{
-  server("127.0.0.1", 10809);
-}
+
