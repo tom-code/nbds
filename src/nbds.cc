@@ -8,12 +8,13 @@
 #include "net.h"
 #include "nbds.h"
 
-
-
 const static unsigned char magic_magic[]={0x4e, 0x42, 0x44, 0x4d, 0x41, 0x47, 0x49, 0x43};
 const static unsigned char magic_opt[]  ={0x49, 0x48, 0x41, 0x56, 0x45, 0x4f, 0x50, 0x54};
-const static unsigned char magic_flg[]  ={0x00, 0x00};
+const static unsigned char magic_flg[]  ={0x00, 0x01};
 const static uint32_t magic_reply = 0x67446698;
+const static uint64_t magic_opt_reply = 0x3e889045565a9;
+const static uint32_t opt_reply_unsup = 0x80000001;
+const static uint32_t opt_export = 1;
 
 const static uint16_t nbd_cmd_read  = 0;
 const static uint16_t nbd_cmd_write = 1;
@@ -49,20 +50,49 @@ public:
   }
 
 private:
-  bool handle_option() {
-    if (in_buffer.size() <16) return false;
-    uint64_t magic = in_buffer.get_uint64();
-    uint32_t opt = in_buffer.get_uint32();
-    uint32_t opt_size = in_buffer.get_uint32();
-    printf("%lx %x %x\n", magic, opt, opt_size);
+
+  bool handle_export(int opt_size) {
+    std::string export_name;
+    if (opt_size > 0) {
+      export_name.assign((char*)in_buffer.get_bytes(), opt_size);
+    }
+    printf("mount export:'%s'\n", export_name.c_str());
+    in_buffer.skip(opt_size);
     in_buffer.sync();
-      
     out_buffer_t out;
     out.add_uint64(disk.size());
     out.add_uint16(0);
     out.add_zero(124);
     con->write(out.data(), out.size());
     wait_for = state_wait_for_t::TRANS;
+    return true;
+  }
+
+  bool handle_option() {
+    if (in_buffer.size() <16) return false;
+    uint64_t magic = in_buffer.get_uint64();
+    uint32_t opt = in_buffer.get_uint32();
+    uint32_t opt_size = in_buffer.get_uint32();
+    printf("%lx %x %x\n", magic, opt, opt_size);
+
+    if (in_buffer.remain() < opt_size) {
+      in_buffer.reset();
+      return false;
+    }
+
+    if (opt == opt_export) {
+      return handle_export(opt_size);
+    } else {
+      printf("rem=%ld os=%d\n", in_buffer.remain(), opt_size);
+      in_buffer.skip(opt_size);
+      in_buffer.sync();
+      out_buffer_t out;
+      out.add_uint64(magic_opt_reply);
+      out.add_uint32(opt);
+      out.add_uint32(opt_reply_unsup);
+      out.add_uint32(0);
+      con->write(out.data(), out.size());
+    }
     return true;
   }
 
@@ -117,7 +147,9 @@ private:
       if (wait_for == state_wait_for_t::FLAGS) {
         if (in_buffer.size() <4) return;
         wait_for = state_wait_for_t::EXPORT;
-        in_buffer.consume(4);
+        uint32_t flags = in_buffer.get_uint32();
+        printf("client flags=%x\n", flags);
+        in_buffer.sync();
       }
       if (wait_for == state_wait_for_t::EXPORT) {
         if (!handle_option()) return;
