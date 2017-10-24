@@ -1,6 +1,6 @@
 
-#include <string>
-#include <map>
+
+#include "disk.h"
 
 enum class nbd_options_t { SIZE };
-void nbds_new_con(connection_t *con, std::map<nbd_options_t, std::string> opts);
+void nbds_new_con(connection_t *con, disk_t *disk);

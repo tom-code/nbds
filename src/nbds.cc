@@ -7,6 +7,7 @@
 #include "buffers.h"
 #include "net.h"
 #include "nbds.h"
+#include "disk.h"
 
 const static unsigned char magic_magic[]={0x4e, 0x42, 0x44, 0x4d, 0x41, 0x47, 0x49, 0x43};
 const static unsigned char magic_opt[]  ={0x49, 0x48, 0x41, 0x56, 0x45, 0x4f, 0x50, 0x54};
@@ -21,21 +22,24 @@ const static uint16_t nbd_cmd_write = 1;
 const static uint16_t nbd_cmd_disc  = 2;
 
 class nbds_t {
-  connection_t *con;
+  connection_t *con = nullptr;
   in_buffer_t in_buffer;
 
   enum class state_wait_for_t {FLAGS, EXPORT, TRANS, NONE};
   state_wait_for_t wait_for = state_wait_for_t::FLAGS;
 
-  std::vector<unsigned char> disk;
+  disk_t *disk = nullptr;
 
 public:
-  nbds_t() {
-    disk.resize(1024*1024*10);
+  nbds_t(disk_t *d) {
+    disk = d;
+  }
+  ~nbds_t() {
+    if (disk) delete disk;
   }
 
   void resize(int size) {
-    disk.resize(size);
+    disk->resize(size);
   }
 
   void set_connection(connection_t *c) {
@@ -60,7 +64,7 @@ private:
     in_buffer.skip(opt_size);
     in_buffer.sync();
     out_buffer_t out;
-    out.add_uint64(disk.size());
+    out.add_uint64(disk->size());
     out.add_uint16(0);
     out.add_zero(124);
     con->write(out.data(), out.size());
@@ -112,7 +116,7 @@ private:
       out.add_uint32(magic_reply);
       out.add_uint32(0);
       out.add_uint64(handle);
-      out.add_bytes(disk.data()+offset, len);
+      disk->read(offset, out.reserve(len), len);
       con->write(out.data(), out.size());
     }
     else if (type == nbd_cmd_write) {
@@ -121,7 +125,7 @@ private:
         in_buffer.reset();
         return false;
       }
-      memcpy(disk.data()+offset, in_buffer.get_bytes(), len);
+      disk->write(offset, in_buffer.get_bytes(), len);
       in_buffer.skip(len);
       in_buffer.sync();
 
@@ -162,9 +166,7 @@ private:
 
 };
 
-void nbds_new_con(connection_t *con, std::map<nbd_options_t, std::string> opts) {
-  nbds_t *n = new nbds_t();
-  auto size_opt = opts.find(nbd_options_t::SIZE);
-  if (size_opt != opts.end()) n->resize(std::stoi(size_opt->second));
+void nbds_new_con(connection_t *con, disk_t *disk) {
+  nbds_t *n = new nbds_t(disk);
   n->set_connection(con);
 }

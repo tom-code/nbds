@@ -85,6 +85,12 @@ struct out_buffer_t {
   void add_bytes(unsigned char *b, int n) {
     buf.insert(buf.end(), b, b+n);
   }
+  unsigned char *reserve(int n) {
+    buf.reserve(buf.size()+n);
+    unsigned char *out = buf.data()+buf.size();
+    buf.resize(buf.size()+n);
+    return out;
+  }
 
   unsigned char *data() {
     return buf.data();

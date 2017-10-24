@@ -5,8 +5,8 @@
 
 
 static void new_con(connection_t *con) {
-  std::map<nbd_options_t, std::string> opts = {{nbd_options_t::SIZE, "10000000"}};
-  nbds_new_con(con, opts);
+  disk_t *disk = disk_new_ramdisk(1024*1024*100);
+  nbds_new_con(con, disk);
 }
 
 int main()
