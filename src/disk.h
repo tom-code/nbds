@@ -2,6 +2,7 @@
 #define _DISK_H
 
 #include <stdint.h>
+#include <string>
 
 class disk_t {
 public:
@@ -12,6 +13,7 @@ public:
   virtual ~disk_t() {};
 };
 disk_t *disk_new_ramdisk(uint64_t size);
+disk_t *disk_new_file(std::string path);
 
 
 #endif
